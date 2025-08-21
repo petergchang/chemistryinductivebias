@@ -521,7 +521,7 @@ def find_acidic_hydrogens(
 
 def apply_proton_transfer(
     mol: rdchem.Mol, A_idx: int, H_idx: int, B_idx: int
-) -> rdchem.Mol | None:
+) -> Optional[rdchem.Mol]:
     """
     Apply a proton transfer from atom B (donor) to atom A (acceptor) via hydrogen H.
 
@@ -1063,7 +1063,7 @@ def proton_transfer_process_rule(
 
 def find_best_transformation(
     scored: List[Tuple[Transformation, int, Dict[str, str]]],
-) -> Tuple[Transformation, int, Dict[str, str]] | None:
+) -> Optional[Tuple[Transformation, int, Dict[str, str]]]:
     """
     Find the best transformation from a list of scored transformations.
 
