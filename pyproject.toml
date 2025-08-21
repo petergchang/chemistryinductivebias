@@ -18,13 +18,17 @@ requires-python = ">=3.12.0"
 
 [project.optional-dependencies]
 dev = [
+  "furo",
   "ipykernel",
-  "pylint",
+  "myst-parser",
   "pre-commit",
   "pytest",
   "refurb",
   "ruff",
-  "sphinx"
+  "sphinx",
+  "sphinx-autobuild",
+  "sphinx-copybutton",
+  "sphinx-autodoc-typehints"
 ]
 
 [project.urls]
@@ -33,18 +37,6 @@ repository = "https://github.com/petergchang/chemistryinductivebias"
 
 [tool.mypy]
 ignore_missing_imports = true
-
-[tool.pylint]
-
-[tool.pylint.messages_control]
-disable = [
-  "invalid-name",
-  "missing-docstring",
-  "too-many-arguments",
-  "too-many-lines",
-  "too-many-locals",
-  "too-many-positional-arguments"
-]
 
 [tool.setuptools_scm]
 version_file = "version.py"

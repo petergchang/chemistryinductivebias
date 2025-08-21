@@ -3,15 +3,21 @@ from contextlib import suppress
 from enum import Enum
 from functools import cache
 import operator
-from typing import List, Tuple, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from rdkit import Chem
-from rdkit import RDConfig
 from rdkit import RDLogger
 from rdkit.Chem import rdchem
 from rdkit.Chem.rdchem import BondType
-from rdkit.Chem import ChemicalFeatures
-import os
+
+if TYPE_CHECKING:
+    # Only for static typing; won't run at import-time
+    from rdkit.Chem.ChemicalFeatures import (  # type: ignore[import-not-found]
+        ChemicalFeatureFactory as ChemFeatureFactory,
+    )
+else:
+    ChemFeatureFactory = Any  # type: ignore[misc]
 
 
 class RuleLabel(Enum):
@@ -129,7 +135,8 @@ class ScoredTransformation:
     def products_canonical_smiles(self) -> Tuple[str, ...]:
         """Canonical SMILES (without explicit Hs) for use as a dedup key.
 
-        Fragments are converted to canonical SMILES and sorted to be order-invariant.
+        Fragments are converted to canonical SMILES and sorted to be
+        order-invariant.
         """
         smiles = [Chem.MolToSmiles(m, canonical=True) for m in self.products()]
         return tuple(sorted(smiles))
@@ -159,7 +166,7 @@ class MechanismOptions:
 
 
 class MechanismProducts:
-    """Holds all proton-transfer candidates with scoring and ranking functionality.
+    """Holds all proton-transfer candidates with scoring and ranking.
 
     This class manages a collection of scored proton transfer transformations,
     providing methods to access the best candidate, get ranked lists, and
@@ -175,7 +182,7 @@ class MechanismProducts:
         ranked(): Returns all candidates sorted by descending score
         ranked_unique(): Returns ranked candidates with duplicates removed
         to_ranked_dicts(): Returns serializable dicts for all ranked candidates
-        to_ranked_dicts_unique(): Returns serializable dicts for unique ranked candidates
+        to_ranked_dicts_unique(): Returns serializable dicts for unique ranked
         describe(): Generates human-readable description of a transformation
     """
 
@@ -191,7 +198,7 @@ class MechanismProducts:
             0.10,
         ),
     ):
-        # assign weights to each scored item so that `score` reflects current policy
+        # assign weights to scored item so that `score` reflects current policy
         self._weights = weights
         self._scored = [s.with_weights(weights) for s in scored]
         self._reactants = reactants.copy()
@@ -254,7 +261,7 @@ class MechanismProducts:
         return out
 
     def _combined_with_offsets(self) -> Tuple[rdchem.Mol, List[int]]:
-        # Rebuild the combined molecule (with explicit Hs) and return offsets mapping
+        # Rebuild the combined mol. (with explicit Hs), return offsets mapping
         mols_h = [Chem.AddHs(m) for m in self._reactants]
         offsets: List[int] = []
         n = 0
@@ -317,14 +324,16 @@ def periodic_en(atomic_number: int) -> float:
     """
     try:
         # Lazy import so pymatgen is an optional dependency
-        from pymatgen.core.periodic_table import Element as PmgElement  # type: ignore
+        from pymatgen.core.periodic_table import (
+            Element as PmgElement,
+        )
 
         x = PmgElement.from_Z(atomic_number).X
         if x is not None:
             return x
     except Exception as e:
         # Any import/runtime issue: fall back to local table
-        raise ValueError(f"Failed to import pymatgen: {e}")
+        raise ValueError(f"Failed to import pymatgen: {e}") from e
     return 0.0
 
 
@@ -379,28 +388,61 @@ def _get_system_smiles_key(mol: rdchem.Mol) -> Tuple[str, ...]:
     return tuple(sorted(smiles_list))
 
 
-_FDEF = ChemicalFeatures.BuildFeatureFactory(
-    os.path.join(RDConfig.RDDataDir, "BaseFeatures.fdef")
-)
+def _build_feature_factory() -> Optional[ChemFeatureFactory]:
+    try:
+        # Local import so it only happens when needed
+        from rdkit import RDConfig
+        from rdkit.Chem import (
+            ChemicalFeatures,
+        )
+
+        data_dir = RDConfig.RDDataDir
+        # Make sure it's usable as a path
+        try:
+            data_dir_path = Path(data_dir)
+        except TypeError:
+            return None
+
+        fdef = data_dir_path / "BaseFeatures.fdef"
+        if fdef.exists():
+            return ChemicalFeatures.BuildFeatureFactory(str(fdef))
+    except Exception:
+        return None
+    return None
+
+
+FEATURE_FACTORY: Optional[ChemFeatureFactory] = None
+
+
+def get_feature_factory() -> Optional[ChemFeatureFactory]:
+    global FEATURE_FACTORY
+    if FEATURE_FACTORY is None:
+        FEATURE_FACTORY = _build_feature_factory()
+    return FEATURE_FACTORY
 
 
 def _feature_atom_indices(mol: rdchem.Mol, family: str) -> List[int]:
     """
-    Get atom indices for a specific chemical feature family using RDKit's feature factory.
+    Get atom indices for a specific chemical feature family using RDKit's
+    feature factory.
 
     Args:
         mol (rdchem.Mol): The molecule to analyze for features.
         family (str): The feature family name (e.g., "Acceptor", "Donor").
 
     Returns:
-        List[int]: Sorted list of unique atom indices that match the feature family.
+        List[int]: Sorted list of unique atom indices that match the feature
+        family.
     """
     # Ensure ring info/property cache are initialized for feature detection
     with suppress(Exception):
         mol.UpdatePropertyCache(strict=False)
     with suppress(Exception):
         Chem.GetSymmSSSR(mol)
-    feats = _FDEF.GetFeaturesForMol(mol)
+    factory = get_feature_factory()
+    if factory is None:
+        raise ValueError("Failed to get feature factory")
+    feats = factory.GetFeaturesForMol(mol)
     indices: List[int] = []
     for f in feats:
         if f.GetFamily() == family:
@@ -441,7 +483,8 @@ def find_acceptors(mol: rdchem.Mol, options: MechanismOptions) -> List[int]:
         if atom.GetFormalCharge() < 0:
             acceptor_atoms.add(atom.GetIdx())
 
-    # # Also include neutral atoms with likely lone pairs (N/O/S) depending on charge policy
+    # # Also include neutral atoms with likely lone pairs (N/O/S) depending on
+    # # charge policy
     # for atom in mol.GetAtoms():
     #     if atom.GetAtomicNum() in (7, 8, 16):
     #         acceptor_atoms.add(atom.GetIdx())
@@ -457,15 +500,16 @@ def find_acidic_hydrogens(
         mol (rdchem.Mol): The molecule to analyze for acidic hydrogens.
         options (MechanismOptions): Configuration options.
     Returns:
-        List[Tuple[int, int]]: List of (donor_atom_idx, hydrogen_idx) pairs representing
-            potential proton donors. Each tuple contains the index of the heavy atom
-            (donor) and the index of the hydrogen atom that can be transferred.
+        List[Tuple[int, int]]: List of (donor_atom_idx, hydrogen_idx) pairs
+            representing potential proton donors. Each tuple contains the index
+            of the heavy atom (donor) and the index of the hydrogen atom that
+            can be transferred.
 
     Notes:
         By default, only considers hydrogens bonded to exactly one heavy atom
-        (excludes bridging hydrogens). If options.include_bridging_hydrogens is True,
-        includes all hydrogen-heavy atom pairs where the hydrogen is bonded to
-        multiple heavy atoms.
+        (excludes bridging hydrogens). If options.include_bridging_hydrogens is
+        True, includes all hydrogen-heavy atom pairs where the hydrogen is
+        bonded to multiple heavy atoms.
     """
     pairs_set: set[Tuple[int, int]] = set()
 
@@ -488,9 +532,10 @@ def find_acidic_hydrogens(
 
 def apply_proton_transfer(
     mol: rdchem.Mol, A_idx: int, H_idx: int, B_idx: int
-) -> rdchem.Mol | None:
+) -> Optional[rdchem.Mol]:
     """
-    Apply a proton transfer from atom B (donor) to atom A (acceptor) via hydrogen H.
+    Apply a proton transfer from atom B (donor) to atom A (acceptor) via
+    hydrogen H.
 
     Args:
         mol (rdchem.Mol): The molecule to modify.
@@ -499,7 +544,8 @@ def apply_proton_transfer(
         B_idx (int): Index of the donor atom.
 
     Returns:
-        rdchem.Mol | None: The new molecule after proton transfer, or None if invalid.
+        rdchem.Mol | None: The new molecule after proton transfer, or None if
+        invalid.
     """
     # Make an editable copy
     rwm = rdchem.RWMol(mol)
@@ -553,8 +599,8 @@ def _is_conjugated_to_pi(mol: rdchem.Mol, idx: int) -> bool:
     """
     a = mol.GetAtomWithIdx(idx)
 
-    # If the anionic atom is itself part of an aromatic ring or a double/triple bond,
-    # its lone pair is likely in an sp/sp2 hybrid orbital,
+    # If the anionic atom is itself part of an aromatic ring or a double/triple
+    # bond, its lone pair is likely in an sp/sp2 hybrid orbital,
     # orthogonal to the adjacent pi system, making resonance impossible.
     if a.GetIsAromatic():
         return False
@@ -605,21 +651,24 @@ def _delta_en_above_baseline(
     mol, atom_idx: int, neighbor_toward_anion_idx: int | None
 ) -> float:
     """
-    Calculate the electronegativity difference above a baseline for inductive effects.
+    Calculate the electronegativity difference above a baseline for inductive
+    effects.
 
-    This function computes the inductive pull as the difference between an atom's
-    electronegativity and a baseline value. The baseline is either the electronegativity
-    of a neighboring atom (if provided) or carbon's electronegativity as a typical
-    sigma framework reference.
+    This function computes the inductive pull as the difference between an
+    atom's electronegativity and a baseline value. The baseline is either the
+    electronegativity of a neighboring atom (if provided) or carbon's
+    electronegativity as a typical sigma framework reference.
 
     Args:
         mol: The molecule containing the atom.
-        atom_idx (int): The index of the atom whose electronegativity is being compared.
-        neighbor_toward_anion_idx (int | None): The index of a neighboring atom to use
-            as baseline, or None to use carbon's electronegativity.
+        atom_idx (int): The index of the atom whose electronegativity is being
+            compared.
+        neighbor_toward_anion_idx (int | None): The index of a neighboring atom
+            to use as baseline, or None to use carbon's electronegativity.
 
     Returns:
-        float: The electronegativity difference above baseline, with a minimum of 0.0.
+        float: The electronegativity difference above baseline, with a minimum
+            of 0.0.
     """
     en_atom = get_en(mol.GetAtomWithIdx(atom_idx))
     if neighbor_toward_anion_idx is not None:
@@ -643,29 +692,39 @@ def _calculate_inductive_score(
     """
     Calculate distance-attenuated sigma-only inductive pull on an anion.
 
-    This function computes the inductive stabilization of an anion by considering
-    electron-withdrawing effects from nearby atoms through sigma bonds only.
-    The contribution from each atom is attenuated by distance and filtered to
-    exclude resonance pathways.
+    This function computes the inductive stabilization of an anion by
+    considering electron-withdrawing effects from nearby atoms through sigma
+    bonds only. The contribution from each atom is attenuated by distance and
+    filtered to exclude resonance pathways.
 
     Args:
         mol (rdchem.Mol): The molecule containing the anion.
         anion_idx (int): The index of the anion atom.
-        max_bonds (int, optional): Maximum number of bonds to consider. Defaults to 4.
-        power (float, optional): Power for distance attenuation when not using exponential. Defaults to 2.0.
-        use_exponential (bool, optional): Whether to use exponential decay instead of power law. Defaults to False.
-        rho (float, optional): Decay factor for exponential attenuation. Defaults to 0.6.
-        charge_boost (float, optional): Multiplier for formal charge contributions. Defaults to 1.5.
-        en_margin (float, optional): Minimum electronegativity difference to consider. Defaults to 0.10.
+        max_bonds (int, optional): Maximum number of bonds to consider.
+            Defaults to 4.
+        power (float, optional): Power for distance attenuation when not using
+            exponential. Defaults to 2.0.
+        use_exponential (bool, optional): Whether to use exponential decay
+            instead of power law. Defaults to False.
+        rho (float, optional): Decay factor for exponential attenuation.
+            Defaults to 0.6.
+        charge_boost (float, optional): Multiplier for formal charge
+            contributions. Defaults to 1.5.
+        en_margin (float, optional): Minimum electronegativity difference to
+            consider. Defaults to 0.10.
 
     Returns:
-        float: The calculated inductive score representing stabilization strength.
+        float: The calculated inductive score representing stabilization
+            strength.
 
     Notes:
         - Only considers atoms within max_bonds by shortest path
-        - Discards paths that are not sigma-only to prevent resonance double-counting
-        - Contribution scales as max(0, ΔEN above local baseline)/distance^power or ΔEN * rho^distance
-        - Adds |formal charge| * charge_boost term for charged centers on sigma-only paths
+        - Discards paths that are not sigma-only to prevent resonance
+          double-counting
+        - Contribution scales as max(0, ΔEN above local baseline)/distance^power
+          or ΔEN * rho^distance
+        - Adds |formal charge| * charge_boost term for charged centers on
+          sigma-only paths
     """
     score = 0.0
     for atom in mol.GetAtoms():
@@ -689,7 +748,8 @@ def _calculate_inductive_score(
         if not is_sigma_only:
             continue
 
-        # neighbor along the path that is closer to the anion (for local EN baseline)
+        # neighbor along the path that is closer to the anion (for local EN
+        # baseline)
         neighbor_toward_anion = path[-2] if d >= 1 else None
         dEN = _delta_en_above_baseline(mol, ai, neighbor_toward_anion)
         if dEN < en_margin and atom.GetFormalCharge() == 0:
@@ -698,8 +758,8 @@ def _calculate_inductive_score(
         attenuation = (rho**d) if use_exponential else (d**power)
         contrib = (dEN / attenuation) if not use_exponential else (dEN * attenuation)
 
-        # Positively charged centers withdraw strongly via field/inductive effects.
-        # and vice versa for negatively charged centers.
+        # Positively charged centers withdraw strongly via field/inductive
+        # effects. and vice versa for negatively charged centers.
         q = int(atom.GetFormalCharge())
         if use_exponential:
             contrib += charge_boost * q * (rho**d)
@@ -735,7 +795,8 @@ def compute_transformation_properties(
     a_new_charge = a_new.GetFormalCharge()
     b_new_charge = b_new.GetFormalCharge()
 
-    # Determine whether A and B came from different initial fragments (different reactants)
+    # Determine whether A and B came from different initial fragments
+    # (different reactants)
     frag_tuples = Chem.GetMolFrags(old, asMols=False, sanitizeFrags=False)
     atom_to_frag: Dict[int, int] = {}
     for frag_id, atoms in enumerate(frag_tuples):
@@ -763,50 +824,50 @@ def compute_transformation_properties(
 
 def electronegativity_object_rule(transformation: Transformation) -> RuleLabel:
     """
-    Assign a qualitative label to a transformation based on electronegativity difference.
+    Assign a qualitative label to a transforma based on electronegativity diff.
 
     Args:
         transformation (Transformation): The transformation to evaluate.
 
     Returns:
-        RuleLabel: One of VERY_FAVORABLE, FAVORABLE, UNFAVORABLE, VERY_UNFAVORABLE, or NEUTRAL.
+        RuleLabel: One of VERY_FAVORABLE, FAVORABLE, UNFAVORABLE,
+            VERY_UNFAVORABLE, or NEUTRAL.
     """
     prop = transformation.properties
     delta_en = float(prop["EN_A"] - prop["EN_B"])
     if prop["delta_charge_on_A"] > 0:
         if delta_en < -0.5:
             return RuleLabel.VERY_FAVORABLE
-        elif delta_en < -0.05:
+        if delta_en < -0.05:
             return RuleLabel.FAVORABLE
-        elif delta_en < 0.05:
+        if delta_en < 0.05:
             return RuleLabel.NEUTRAL
-        elif delta_en < 0.5:
+        if delta_en < 0.5:
             return RuleLabel.UNFAVORABLE
-        else:
-            return RuleLabel.VERY_UNFAVORABLE
-    elif prop["delta_charge_on_A"] < 0:
+        return RuleLabel.VERY_UNFAVORABLE
+    if prop["delta_charge_on_A"] < 0:
         if delta_en > 0.5:
             return RuleLabel.VERY_FAVORABLE
-        elif delta_en > 0.05:
+        if delta_en > 0.05:
             return RuleLabel.FAVORABLE
-        elif delta_en < -0.05:
+        if delta_en < -0.05:
             return RuleLabel.NEUTRAL
-        elif delta_en < -0.5:
+        if delta_en < -0.5:
             return RuleLabel.UNFAVORABLE
-        else:
-            return RuleLabel.VERY_UNFAVORABLE
+        return RuleLabel.VERY_UNFAVORABLE
     return RuleLabel.NEUTRAL
 
 
 def atomic_radius_object_rule(transformation: Transformation) -> RuleLabel:
     """
-    Assign a qualitative label to a transformation based on atomic radius difference.
+    Assign a qualitative label to a transform based on atomic radius diff.
 
     Args:
         transformation (Transformation): The transformation to evaluate.
 
     Returns:
-        RuleLabel: One of VERY_FAVORABLE, FAVORABLE, UNFAVORABLE, VERY_UNFAVORABLE, or NEUTRAL.
+        RuleLabel: One of VERY_FAVORABLE, FAVORABLE, UNFAVORABLE,
+            VERY_UNFAVORABLE, or NEUTRAL.
     """
     prop = transformation.properties
     if prop["delta_charge_on_A"] == 0:
@@ -815,11 +876,11 @@ def atomic_radius_object_rule(transformation: Transformation) -> RuleLabel:
     # Thresholds adapted from 15 pm -> 0.15 Å
     if delta_r > 0.15:
         return RuleLabel.VERY_FAVORABLE
-    elif delta_r > 0.05:
+    if delta_r > 0.05:
         return RuleLabel.FAVORABLE
-    elif delta_r > -0.05:
+    if delta_r > -0.05:
         return RuleLabel.NEUTRAL
-    elif delta_r > -0.15:
+    if delta_r > -0.15:
         return RuleLabel.UNFAVORABLE
     return RuleLabel.VERY_UNFAVORABLE
 
@@ -829,13 +890,14 @@ def resonance_object_rule(transformation: Transformation) -> RuleLabel:
     Assign a qualitative label based on the presence of resonance stabilization.
 
     This rule evaluates the resonance stabilization of the anion formed
-    after proton transfer. Resonance stabilization is a very strong stabilizing effect.
+    after proton transfer.
 
     Args:
         transformation (Transformation): The transformation to evaluate.
 
     Returns:
-        RuleLabel: VERY_FAVORABLE if anion is resonance-stabilized, NEUTRAL otherwise.
+        RuleLabel: VERY_FAVORABLE if anion is resonance-stabilized, NEUTRAL
+            otherwise.
     """
     if transformation.properties.get("is_resonance_stabilized", False):
         return RuleLabel.VERY_FAVORABLE
@@ -855,13 +917,14 @@ def inductive_object_rule(transformation: Transformation) -> RuleLabel:
 
     Returns:
         RuleLabel: VERY_FAVORABLE for strong inductive effects (score > 2.0),
-                  FAVORABLE for moderate effects (score > 0.5), NEUTRAL otherwise.
+                  FAVORABLE for moderate effects (score > 0.5), NEUTRAL
+                  otherwise.
     """
     score = transformation.properties.get("inductive_score", 0.0)
     # These thresholds can be tuned based on desired sensitivity.
     if score > 2.0:  # e.g., Multiple strong EWGs like in trichloroacetic acid
         return RuleLabel.VERY_FAVORABLE
-    elif score > 0.5:  # e.g., A single strong EWG nearby like in chloroacetic acid
+    if score > 0.5:  # e.g., A single strong EWG nearby like in chloroacetic acid
         return RuleLabel.FAVORABLE
     return RuleLabel.NEUTRAL
 
@@ -878,7 +941,8 @@ def formal_charge_object_rule(transformation: Transformation) -> RuleLabel:
 
     Returns:
         RuleLabel: VERY_FAVORABLE if both A and B are neutral in products,
-                  FAVORABLE if exactly one is neutral, UNFAVORABLE if neither is neutral.
+                  FAVORABLE if exactly one is neutral, UNFAVORABLE if neither
+                  is neutral.
     """
     props = transformation.properties
     a_q_old = int(props.get("charge_A_old", 0))
@@ -894,16 +958,13 @@ def formal_charge_object_rule(transformation: Transformation) -> RuleLabel:
         return RuleLabel.VERY_FAVORABLE
 
     # Rule 2: Creation of more extreme charges is highly unfavorable
-    charge_pileup_A = (a_q_new > a_q_old and a_q_old > 0) or (
-        a_q_new < a_q_old and a_q_old < 0
-    )
-    charge_pileup_B = (b_q_new > b_q_old and b_q_old > 0) or (
-        b_q_new < b_q_old and b_q_old < 0
-    )
+    charge_pileup_A = (a_q_new > a_q_old > 0) or (a_q_new < a_q_old < 0)
+    charge_pileup_B = (b_q_new > b_q_old > 0) or (b_q_new < b_q_old < 0)
     if charge_pileup_A or charge_pileup_B:
         return RuleLabel.VERY_UNFAVORABLE
 
-    # Rule 3: Creation of charge from neutral is neutral if intermolecular, otherwise unfavorable
+    # Rule 3: Creation of charge from neutral is neutral if intermolecular,
+    # otherwise unfavorable
     if new_abs_sum > old_abs_sum:
         if props.get("is_interfragment_transfer", False):
             return RuleLabel.NEUTRAL
@@ -928,8 +989,8 @@ def score_transformation_components(
         t (Transformation): The transformation to score.
 
     Returns:
-        Tuple containing (FC_label, FC_score, EN_label, EN_score, RES_label, RES_score,
-                        AR_label, AR_score, IND_label, IND_score).
+        Tuple containing (FC_label, FC_score, EN_label, EN_score, RES_label,
+            RES_score, AR_label, AR_score, IND_label, IND_score).
     """
     fc_label = formal_charge_object_rule(t)
     en_label = electronegativity_object_rule(t)
@@ -957,7 +1018,8 @@ def score_transformation_components(
 
 def combine_reactants(reactants: List[rdchem.Mol]) -> rdchem.Mol:
     """
-    Combine a list of reactant molecules into a single molecule with explicit hydrogens.
+    Combine a list of reactant molecules into a single molecule with explicit
+    hydrogens.
 
     Args:
         reactants (List[rdchem.Mol]): List of reactant molecules.
@@ -971,7 +1033,8 @@ def combine_reactants(reactants: List[rdchem.Mol]) -> rdchem.Mol:
     if any(m is None for m in reactants):
         bad_idx = [i for i, m in enumerate(reactants) if m is None]
         raise ValueError(
-            f"Invalid reactant(s) at indices {bad_idx}: one or more SMILES failed to parse"
+            f"Invalid reactant(s) at indices {bad_idx}: one or more SMILES "
+            f"failed to parse"
         )
     mols_h = [Chem.AddHs(m) for m in reactants]
     combined = mols_h[0]
@@ -988,11 +1051,13 @@ def proton_transfer_process_rule(
     reactants: List[rdchem.Mol], options: MechanismOptions
 ) -> List[Transformation]:
     """
-    Generate all possible proton transfer transformations for a set of reactants.
+    Generate all possible proton transfer transformations for a set of
+    reactants.
 
     Args:
         reactants (List[rdchem.Mol]): List of reactant molecules.
-        options (MechanismOptions): Configuration options controlling enumeration behavior.
+        options (MechanismOptions): Configuration options controlling
+            enumeration behavior.
 
     Returns:
         List[Transformation]: List of possible transformations.
@@ -1030,7 +1095,7 @@ def proton_transfer_process_rule(
 
 def find_best_transformation(
     scored: List[Tuple[Transformation, int, Dict[str, str]]],
-) -> Tuple[Transformation, int, Dict[str, str]] | None:
+) -> Optional[Tuple[Transformation, int, Dict[str, str]]]:
     """
     Find the best transformation from a list of scored transformations.
 
@@ -1052,22 +1117,24 @@ def proton_transfer_predict(
     options: MechanismOptions | None = None,
     weights: Tuple[float, float, float, float, float] = (0.30, 0.25, 0.20, 0.15, 0.10),
 ) -> MechanismProducts:
-    """Generate all proton-transfer candidates and wrap them as MechanismProducts.
+    """Generate all proton-transfer candidates and wrap them as
+    MechanismProducts.
 
-    This function enumerates all possible proton transfer transformations between
-    the given reactant molecules, scores them using multiple criteria, and returns
-    them wrapped in a MechanismProducts object for further analysis.
+    This function enumerates all possible proton transfer transformations
+    between the given reactant molecules, scores them using multiple criteria,
+    and returns them wrapped in a MechanismProducts object for further analysis.
 
     Args:
-        reactants (List[rdchem.Mol]): List of RDKit molecule objects representing
-            the reactants for proton transfer reactions.
-        options (MechanismOptions | None, optional): Configuration options controlling
-            enumeration behavior such as which atoms to consider as acceptors/donors.
-            If None, default options are used. Defaults to None.
-        weights (Tuple[float, float, float, float, float], optional): Weights for
-            combining the five scoring components (formal charge, electronegativity,
-            resonance, atomic radius, inductive). Must sum to 1.0 or less.
-            Defaults to (0.30, 0.25, 0.20, 0.15, 0.10).
+        reactants (List[rdchem.Mol]): List of RDKit molecule objects
+            representing the reactants for proton transfer reactions.
+        options (MechanismOptions | None, optional): Configuration options
+            controlling enumeration behavior such as which atoms to consider as
+            acceptors/donors. If None, default options are used. Defaults to
+            None.
+        weights (Tuple[float, float, float, float, float], optional): Weights
+            for combining the five scoring components (formal charge,
+            electronegativity, resonance, atomic radius, inductive). Must sum
+            to 1.0 or less. Defaults to (0.30, 0.25, 0.20, 0.15, 0.10).
 
     Returns:
         MechanismProducts: A container object holding all scored transformations
