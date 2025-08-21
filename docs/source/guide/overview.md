@@ -1,21 +1,38 @@
+
+
 # Overview
+At a bird's-eye view, the Computable Model of the Chemistry Textbook (CMT) takes:
+- Human expertise
+- Textbook knowledge
+- Reaction data (e.g., USPTO)
 
-This guide provides a scannable, layered map of the Computable Model of the Chemistry Textbook (CMT).
+and builds a transition graph that can be used to make predictions on reaction outcomes.
 
-- **Goal**: a reusable information architecture that we keep returning to.
-- **Two organizing axes**: Layers (higher → mid → lower) and Conceptual categories.
+![System Architecture](figs/diag-lvl0.png)
 
-```{contents}
-:depth: 2
-```
 
-## Key components at a glance
+## The Building Procedure
+The first component of the building procedure, and one that this repo is implementing primarily, is translating textbook chemistry knowledge about chemical mechanisms into **process rules** and **object rules**, which return favorability scores that are turned into transition graphs via an **adjudicator**.
 
-- **Process**: enumerate transformations → compute properties → score candidates → aggregate.
-- **Object rules**: formal charge, electronegativity, resonance, atomic radius, inductive effects.
-- **Parameters**: weights, score map, thresholds, inductive hyperparameters.
-- **Artifacts**: transformations, components, mechanism products, diagnostics.
+![System Architecture](figs/diag-lvl1.png)
 
-See the subsequent pages for the layered view, component summaries, module deep‑dives, and hard‑parts.
+Given a set of reactants, the **process rules** generate a set of candidate transformations proposed by mechanisms encoded in chemistry textbooks, and the **object rules** assess the favorability of each candidate transformation.
+
+![System Architecture](figs/diag-lvl2.png)
+
+The **adjudicator** then translates these favorability assessments into a probability distribution over the outgoing transformation edges. The resulting transition graph can be seen as the **inductive prior** of textbook and human expertise.
+
+![System Architecture](figs/diag-lvl3.png)
+
+Finally, given real-life reaction data, we fit/update the inductive prior transition graph to generate the final CMT graph that represents our posterior belief.
+
+![System Architecture](figs/diag-lvl4.png)
+
+
+## The Prediction Procedure
+
+When making new predictions at inference-time, we can use the posterior transition graph to find steady states which correspond to the predicted set of reaction products.
+
+![System Architecture](figs/diag-lvl5.png)
 
 
