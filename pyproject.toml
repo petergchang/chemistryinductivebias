@@ -18,17 +18,19 @@ requires-python = ">=3.12.0"
 
 [project.optional-dependencies]
 dev = [
-  "furo",
   "ipykernel",
   "myst-parser",
   "pre-commit",
   "pytest",
   "refurb",
-  "ruff",
+  "ruff"
+]
+doc = [
   "sphinx",
   "sphinx-autobuild",
   "sphinx-copybutton",
-  "sphinx-autodoc-typehints"
+  "sphinx-autodoc-typehints",
+  "sphinx-rtd-theme"
 ]
 
 [project.urls]
