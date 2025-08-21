@@ -31,9 +31,10 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinx.ext.napoleon",  # Google/NumPy docstrings
+    "sphinx_rtd_theme",
 ]
 
-html_theme = "furo"
+html_theme = "sphinx_rtd_theme"
 
 # Autodoc / typing / summaries
 autosummary_generate = True
