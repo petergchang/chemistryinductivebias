@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 project = "Computable Model of Chemistry Textbook"
-copyright = "2025, Peter G. Chang"
-author = "Peter G. Chang"
+copyright = "2025, Peter G. Chang, Sendhil Mullainathan"
+author = "Peter G. Chang, Sendhil Mullainathan"
 
 version = "0.1.0"
 release = "0.1.0"

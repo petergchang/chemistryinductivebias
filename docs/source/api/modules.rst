@@ -1,4 +1,4 @@
-chemistryinductivebias
+API Documentation
 ======================
 
 .. toctree::
