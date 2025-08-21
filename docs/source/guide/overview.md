@@ -1,5 +1,3 @@
-
-
 # Overview
 At a bird's-eye view, the Computable Model of the Chemistry Textbook (CMT) takes:
 - Human expertise
