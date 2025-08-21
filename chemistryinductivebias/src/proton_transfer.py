@@ -3,15 +3,19 @@ from contextlib import suppress
 from enum import Enum
 from functools import cache
 import operator
-from typing import List, Tuple, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from rdkit import Chem
-from rdkit import RDConfig
 from rdkit import RDLogger
 from rdkit.Chem import rdchem
 from rdkit.Chem.rdchem import BondType
-from rdkit.Chem import ChemicalFeatures
-import os
+
+if TYPE_CHECKING:
+    # Only for static typing; won’t run at import-time
+    from rdkit.Chem.ChemicalFeatures import ChemicalFeatureFactory as ChemFeatureFactory  # type: ignore[import-not-found]
+else:
+    ChemFeatureFactory = Any  # type: ignore[misc]
 
 
 class RuleLabel(Enum):
@@ -379,9 +383,35 @@ def _get_system_smiles_key(mol: rdchem.Mol) -> Tuple[str, ...]:
     return tuple(sorted(smiles_list))
 
 
-_FDEF = ChemicalFeatures.BuildFeatureFactory(
-    os.path.join(RDConfig.RDDataDir, "BaseFeatures.fdef")
-)
+def _build_feature_factory() -> Optional[ChemFeatureFactory]:
+    try:
+        # Local import so it only happens when needed
+        from rdkit import RDConfig
+        from rdkit.Chem import ChemicalFeatures
+
+        data_dir = RDConfig.RDDataDir
+        # Make sure it's usable as a path
+        try:
+            data_dir_path = Path(data_dir)
+        except TypeError:
+            return None
+
+        fdef = data_dir_path / "BaseFeatures.fdef"
+        if fdef.exists():
+            return ChemicalFeatures.BuildFeatureFactory(str(fdef))
+    except Exception:
+        return None
+    return None
+
+
+FEATURE_FACTORY: Optional[ChemFeatureFactory] = None
+
+
+def get_feature_factory() -> Optional[ChemFeatureFactory]:
+    global FEATURE_FACTORY
+    if FEATURE_FACTORY is None:
+        FEATURE_FACTORY = _build_feature_factory()
+    return FEATURE_FACTORY
 
 
 def _feature_atom_indices(mol: rdchem.Mol, family: str) -> List[int]:
@@ -400,7 +430,10 @@ def _feature_atom_indices(mol: rdchem.Mol, family: str) -> List[int]:
         mol.UpdatePropertyCache(strict=False)
     with suppress(Exception):
         Chem.GetSymmSSSR(mol)
-    feats = _FDEF.GetFeaturesForMol(mol)
+    factory = get_feature_factory()
+    if factory is None:
+        raise ValueError("Failed to get feature factory")
+    feats = factory.GetFeaturesForMol(mol)
     indices: List[int] = []
     for f in feats:
         if f.GetFamily() == family:
