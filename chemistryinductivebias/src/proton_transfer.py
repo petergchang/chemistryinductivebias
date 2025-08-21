@@ -321,7 +321,7 @@ def periodic_en(atomic_number: int) -> float:
 
         x = PmgElement.from_Z(atomic_number).X
         if x is not None:
-            return float(x)
+            return x
     except Exception as e:
         # Any import/runtime issue: fall back to local table
         raise ValueError(f"Failed to import pymatgen: {e}")
@@ -730,10 +730,10 @@ def compute_transformation_properties(
     b_old = old.GetAtomWithIdx(B_idx)
     a_new = new.GetAtomWithIdx(A_idx)
     b_new = new.GetAtomWithIdx(B_idx)
-    a_old_charge = int(a_old.GetFormalCharge())
-    b_old_charge = int(b_old.GetFormalCharge())
-    a_new_charge = int(a_new.GetFormalCharge())
-    b_new_charge = int(b_new.GetFormalCharge())
+    a_old_charge = a_old.GetFormalCharge()
+    b_old_charge = b_old.GetFormalCharge()
+    a_new_charge = a_new.GetFormalCharge()
+    b_new_charge = b_new.GetFormalCharge()
 
     # Determine whether A and B came from different initial fragments (different reactants)
     frag_tuples = Chem.GetMolFrags(old, asMols=False, sanitizeFrags=False)
