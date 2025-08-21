@@ -7,13 +7,7 @@ This project builds a computable model of chemistry textbook.
 :caption: Guide
 
 guide/overview
-guide/layers
-guide/components
-guide/modules
 guide/workflow
-guide/parameters
-guide/v1-v2
-guide/hard-parts
 ```
 
 ```{toctree}
