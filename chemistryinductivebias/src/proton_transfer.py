@@ -324,7 +324,7 @@ def periodic_en(atomic_number: int) -> float:
     """
     try:
         # Lazy import so pymatgen is an optional dependency
-        from pymatgen.core.periodic_table import (  # pylint: disable=import-outside-toplevel
+        from pymatgen.core.periodic_table import (
             Element as PmgElement,
         )
 
@@ -391,8 +391,8 @@ def _get_system_smiles_key(mol: rdchem.Mol) -> Tuple[str, ...]:
 def _build_feature_factory() -> Optional[ChemFeatureFactory]:
     try:
         # Local import so it only happens when needed
-        from rdkit import RDConfig  # pylint: disable=import-outside-toplevel
-        from rdkit.Chem import (  # pylint: disable=import-outside-toplevel
+        from rdkit import RDConfig
+        from rdkit.Chem import (
             ChemicalFeatures,
         )
 
@@ -406,7 +406,7 @@ def _build_feature_factory() -> Optional[ChemFeatureFactory]:
         fdef = data_dir_path / "BaseFeatures.fdef"
         if fdef.exists():
             return ChemicalFeatures.BuildFeatureFactory(str(fdef))
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:
         return None
     return None
 
@@ -415,7 +415,7 @@ FEATURE_FACTORY: Optional[ChemFeatureFactory] = None
 
 
 def get_feature_factory() -> Optional[ChemFeatureFactory]:
-    global FEATURE_FACTORY  # pylint: disable=global-statement
+    global FEATURE_FACTORY
     if FEATURE_FACTORY is None:
         FEATURE_FACTORY = _build_feature_factory()
     return FEATURE_FACTORY
@@ -558,11 +558,11 @@ def apply_proton_transfer(
         # Break B-H and form A-H
         try:
             rwm.RemoveBond(B_idx, H_idx)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             return None
         try:
             rwm.AddBond(A_idx, H_idx, BondType.SINGLE)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             return None
 
         atomA = rwm.GetAtomWithIdx(A_idx)
@@ -573,7 +573,7 @@ def apply_proton_transfer(
         newmol = rwm.GetMol()
         try:
             Chem.SanitizeMol(newmol)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             # Discard invalid structures (e.g., valence violations)
             return None
         return newmol
