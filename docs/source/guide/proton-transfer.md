@@ -164,7 +164,7 @@ When an anion is a *part* of a double bond, the deprotonated atom is {math}`sp^2
 ### Inductive Effects
 The inductive effect describes the stabilization of a charge through the {math}`\sigma`-bond framework of a molecule. Electronegative atoms can pull electron density through these bonds, delocalizing the negative charge on the newly-formed anion and making it more stable.
 
-The stabilization is quantified by the function as {py:func}`calculate_inductive_score(.) <chemistryinductivebias.src.proton_transfer.calculate_inductive_score>`. It calculates a score by summing up the electron-withdrawing contributions from all relevant atoms in the molecule, attenuated by their distance from the anion.
+The stabilization is quantified by the function as {py:func}`calculate_inductive_score(.) <chemistryinductivebias.src.proton_transfer.calculate_inductive_score>`. It calculates a score by summing up the electron-withdrawing contributions from all relevant atoms in the molecule, attenuated by their distance from the anion. By default, it considers atoms up to 4 bonds away from the anion.
 
 ```py
 ## Pseudocode
