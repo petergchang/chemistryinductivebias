@@ -1,33 +1,84 @@
 # Proton Transfer Mechanism
+The proton transfer mechanism is implemented as {py:func}`proton_transfer_predict(.) <chemistryinductivebias.src.proton_transfer.proton_transfer_predict>`.
 
-## Core Workflow
+## Core Workflow: An Overview
 
-A three-step pipeline from candidates to a final score.
+We use a four-step pipeline from reactants to the final prediction.
 
-## 1) Apply Process Rule (enumerate candidates)
+### {ref}`1) Enumerate Proton Acceptors and Donors <step-1>`
+- Find proton acceptors `A` (all non-H atoms and hydride).
+- Find acidic hydrogens `B-H` (heavy atoms bonded to non-bridging hydrogens).
 
-- Find acceptors A (features + optional exhaustive mode incl. non-H atoms and hydride).
-- Find acidic hydrogens B–H (heavy atoms bonded to non-bridging hydrogens).
-- Apply transfer: break B–H, form A–H, increment charge on A, decrement on B.
-- Sanitize and discard chemically invalid products (via RDKit sanitization).
+### {ref}`2) Apply Proton Transfer <step-2>`
+- For each `(A, B, H)`, break `B-H` bond and form `A-H` bond.
+- Increment charge on `A`, decrement charge on `B`.
+- Sanitize and discard chemically invalid products.
 
-## 2) Compute Properties (per candidate "Transformation")
-
-- Change in formal charge, electronegativity deltas, atomic radii, resonance flags.
+### {ref}`3) Compute Transformation Properties <step-3>`
+- Compute delta in formal charge, electronegativity, and atomic radii.
+- Resonance flag computed by identifying $\pi$-bonds adjacent to the new anion.
 - Inductive stabilization score using distance-attenuated relative EN and boosted charged centers.
 
-## 3) Score and Aggregate
+### {ref}`4) Score and Aggregate <step-4>`
 
-- Apply object rules: formal charge, electronegativity, resonance, atomic radius, inductive.
-- Convert to labels/scores via thresholds and `SCORE_MAP` and take a weighted sum.
+- Apply object rules for formal charge, electronegativity, resonance, atomic radius, and inductive effects to generate favorability labels.
+- Convert favorability labels to scores and take a weighted sum.
 
 ```python
-# pseudo
-cands = generate_candidates(mol)
-props = [compute_transformation_properties(c) for c in cands]
-comp = [score_transformation_components(p, params) for p in props]
-final = [aggregate_components(cs, params.weights) for cs in comp]
+## Pseudocode
+# Step 1: Find potential proton acceptors and donors
+acceptors = find_acceptors(reactants)
+donors = find_acidic_hydrogens(reactants)
+
+candidates = []
+for A in acceptors:
+    for B, H in donors:
+        # Step 2: Apply proton transfer
+        candidate = apply_proton_transfer(A, H, B)
+
+        # Step 3: Compute transformation properties
+        properties = compute_transformation_properties(candidate)
+        candidates.append((candidate, properties))
+
+# Step 4: Apply object rule to assess favorability
+scores = score_transformation_components(candidates)
 ```
+
+(step-1)=
+## Step 1: Enumerate Proton Acceptors and Donors
+Finding proton acceptors is implemented as {py:func}`find_acceptors(.) <chemistryinductivebias.src.proton_transfer.find_acceptors>`. It takes an `rdchem.Mol` instance and a `MechanismOptions` instance with the default `enumerate_all_acceptors=True` as arguments. Given this, it returns all non-hyderogen atoms in the molecule. Otherwise, it uses `RDKit`'s feature factory with family name `"Acceptor"` to return proton acceptors.
+
+```py
+## Pseudocode
+def find_acceptors(mol):
+    acceptors = []
+    for a in mol.GetAtoms():
+        if a != hydrogen or a == hydride:
+            acceptors.append(a)
+    return acceptors
+```
+
+Finding proton donors is implemented as {py:func}`find_acidic_hydrogens(.) <chemistryinductivebias.src.proton_transfer.find_acidic_hydrogens>`. It finds all non-bridging hydrogens and returns the donor atom and the hydrogen connected to it.
+
+```py
+## Pseudocode
+def find_acidic_hydrogens(mol):
+    donor_pairs = []
+    for a in mol.GetAtoms():
+        neighbors = a.neighbors
+        if a == hydrogen and len(neighbors) == 1:
+            donor_pairs.append((neighbors[0], a))
+    return donor_pairs
+```
+
+(step-2)=
+## Step 2: Apply Proton Transfer
+
+(step-3)=
+## Step 3: Compute Transformation Properties
+
+(step-4)=
+## Step 4: Score and Aggregate
 
 
 ## Modules
