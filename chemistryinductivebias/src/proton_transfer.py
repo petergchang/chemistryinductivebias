@@ -453,8 +453,10 @@ def _feature_atom_indices(mol: rdchem.Mol, family: str) -> List[int]:
 def find_acceptors(mol: rdchem.Mol, options: MechanismOptions) -> List[int]:
     """Return indices of atoms that can act as proton acceptors.
 
-    Uses RDKit's feature factory (Acceptor) and augments with
-    any atoms carrying a negative formal charge.
+    If `options.enumerate_all_acceptors` is `True`, then
+    all non-hydrogen atoms plus hydride (H with -1 formal charge)
+    are potential acceptors. Otherwise, it uses `RDKit`'s feature factory
+    with family name `"Acceptor"` to return proton acceptors.
 
     Args:
         mol (rdchem.Mol): The molecule to analyze for acceptor atoms.
