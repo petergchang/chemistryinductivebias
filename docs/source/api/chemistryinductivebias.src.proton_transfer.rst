@@ -5,4 +5,3 @@ chemistryinductivebias.src.proton\_transfer module
    :members:
    :show-inheritance:
    :undoc-members:
-   :noindex:

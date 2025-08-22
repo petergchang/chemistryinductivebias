@@ -1,4 +1,4 @@
-chemistryinductivebias package
+``chemistryinductivebias``
 ==============================
 
 .. automodule:: chemistryinductivebias
@@ -6,18 +6,18 @@ chemistryinductivebias package
    :show-inheritance:
    :undoc-members:
 
-Subpackages
------------
+``proton_transfer``
+===================
 
 .. toctree::
    :maxdepth: 4
 
-   chemistryinductivebias.src
+   chemistryinductivebias.src.proton_transfer
 
-Submodules
-----------
+``utils``
+===================
 
 .. toctree::
    :maxdepth: 4
 
-   chemistryinductivebias.paths
+   chemistryinductivebias.src.utils

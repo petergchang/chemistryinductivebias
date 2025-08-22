@@ -453,8 +453,10 @@ def _feature_atom_indices(mol: rdchem.Mol, family: str) -> List[int]:
 def find_acceptors(mol: rdchem.Mol, options: MechanismOptions) -> List[int]:
     """Return indices of atoms that can act as proton acceptors.
 
-    Uses RDKit's feature factory (Acceptor) and augments with
-    any atoms carrying a negative formal charge.
+    If `options.enumerate_all_acceptors` is `True`, then
+    all non-hydrogen atoms plus hydride (H with -1 formal charge)
+    are potential acceptors. Otherwise, it uses `RDKit`'s feature factory
+    with family name `"Acceptor"` to return proton acceptors.
 
     Args:
         mol (rdchem.Mol): The molecule to analyze for acceptor atoms.
@@ -584,18 +586,18 @@ def apply_proton_transfer(
 
 def _is_conjugated_to_pi(mol: rdchem.Mol, idx: int) -> bool:
     """
-    Check if an atom is conjugated to a pi system within 2 bonds.
+    Check if an atom is adjacent (i.e., a bond away) to a pi system.
 
     This function determines if an atom is adjacent to a pi system
     by checking for aromatic character, conjugated bonds, or double/triple bonds
-    within a 2-bond radius.
+    within a bond radius.
 
     Args:
         mol (rdchem.Mol): The molecule to analyze.
         idx (int): The index of the atom to check.
 
     Returns:
-        bool: True if the atom is conjugated to a pi system, False otherwise.
+        bool: True if the atom is adjacent to a pi system, False otherwise.
     """
     a = mol.GetAtomWithIdx(idx)
 
@@ -626,7 +628,7 @@ def _is_conjugated_to_pi(mol: rdchem.Mol, idx: int) -> bool:
     return False
 
 
-def _is_resonance_stabilized(mol: rdchem.Mol, anion_idx: int) -> bool:
+def is_resonance_stabilized(mol: rdchem.Mol, anion_idx: int) -> bool:
     """
     Check if an anion is resonance-stabilized by conjugation to a pi system.
 
@@ -679,7 +681,7 @@ def _delta_en_above_baseline(
     return max(0.0, en_atom - en_base)
 
 
-def _calculate_inductive_score(
+def calculate_inductive_score(
     mol: rdchem.Mol,
     anion_idx: int,
     max_bonds: int = 4,
@@ -816,8 +818,8 @@ def compute_transformation_properties(
         "EN_B": get_en(b_old),
         "Radius_A": get_radius_angstrom(a_old),
         "Radius_B": get_radius_angstrom(b_old),
-        "is_resonance_stabilized": _is_resonance_stabilized(new, B_idx),
-        "inductive_score": _calculate_inductive_score(new, B_idx),
+        "is_resonance_stabilized": is_resonance_stabilized(new, B_idx),
+        "inductive_score": calculate_inductive_score(new, B_idx),
     }
     return props
 

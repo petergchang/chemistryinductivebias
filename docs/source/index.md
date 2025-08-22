@@ -3,9 +3,17 @@
 This project builds a computable model of chemistry textbook.
 
 ```{toctree}
-:maxdepth: 2
-:hidden:
+:maxdepth: 1
+:caption: Guide
 
-getting-started
+guide/overview
+guide/proton-transfer
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: API Documentation
+
 api/modules
 changelog
+```

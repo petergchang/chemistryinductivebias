@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 project = "Computable Model of Chemistry Textbook"
-copyright = "2025, Peter G. Chang"
-author = "Peter G. Chang"
+copyright = "2025, Peter G. Chang, Sendhil Mullainathan"
+author = "Peter G. Chang, Sendhil Mullainathan"
 
 version = "0.1.0"
 release = "0.1.0"
@@ -31,9 +31,10 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinx.ext.napoleon",  # Google/NumPy docstrings
+    "sphinx_rtd_theme",
 ]
 
-html_theme = "furo"
+html_theme = "sphinx_rtd_theme"
 
 # Autodoc / typing / summaries
 autosummary_generate = True
